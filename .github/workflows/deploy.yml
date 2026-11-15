@@ -25,6 +25,12 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm test
       - run: npm run build
+      - name: Install browser for smoke test
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Verify production app loads on desktop and mobile
+        run: node tests/browser-smoke.mjs
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
