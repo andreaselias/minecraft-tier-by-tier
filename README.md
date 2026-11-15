@@ -7,8 +7,8 @@ A web app responsiva para dar uma direção à sua aventura de Minecraft Surviva
 ## Funcionalidades
 
 - **Cinco eras**: Sobrevivência → Indústria → Expansão → Conquista → Legado.
-- **Progressão manual**: marque as missões concluídas no próprio mundo, acompanhe porcentagens e extras.
-- **Dois modos**: **Livre**, para registrar missões de qualquer era, e **Rigoroso**, que bloqueia a marcação de objetivos de eras posteriores até você completar os objetivos principais anteriores.
+- **Progressão manual**: marque as missões concluídas no próprio mundo; as missões não relacionadas a fazendas que forem obrigatórias devem estar completas, além de pelo menos 50% de todas as fazendas da era (arredondando para cima).
+- **Dois modos**: **Livre**, para registrar missões de qualquer era, e **Rigoroso**, que bloqueia a marcação de objetivos de eras posteriores até cumprir todos os requisitos de avanço nas anteriores.
 - **Desbloqueios**: listas de equipamentos, estruturas e mecânicas recomendadas por era.
 - **Roleta**: 10 desafios não destrutivos e opcionais, com histórico.
 - **Atlas**: adicione pontos com dimensão, coordenadas X/Y/Z, tipo, notas e visualização esquemática relativa X/Z. Não é um mapa topográfico e não lê a seed.
@@ -61,7 +61,18 @@ O app **não verifica automaticamente** missões concluídas dentro do Minecraft
 
 A progressão foi projetada para **Minecraft Bedrock** moderno. Inclui ferramentas de cobre, golens de cobre, Trial Chambers e outras funcionalidades disponíveis em lançamentos recentes. Tutorial de fazenda feito para Java pode não funcionar no Bedrock. Itens e mecânicas podem mudar com as atualizações do jogo.
 
-Para avançar no modo Rigoroso é necessário concluir 100% dos **objetivos principais** de cada era anterior. Objetivos **EXTRA** não bloqueiam a progressão. O app permite consultar qualquer era antes de desbloqueá-la.
+## As sete regras da série
+
+1. Conclua todos os objetivos obrigatórios da era antes de avançar.
+2. Todas as construções e fazendas devem funcionar, ser caprichadas e integradas ao mundo.
+3. Conclua pelo menos 50% das fazendas de cada era; **quais** fazendas construir é uma escolha sua. Arredondamos a meta para cima quando o total for ímpar.
+4. Você pode coletar qualquer loot, mas o uso de certos equipamentos aguarda a era em que forem liberados.
+5. Guarde lembranças, itens de marcos importantes e troféus para montar seu futuro museu.
+6. O vídeo sugere mundos **Large Biomes** para imersão (opcional; a disponibilidade pode variar conforme a edição/versão do jogo).
+7. O mapa da seed pode ser consultado livremente entre eras. Durante uma era, o conjunto original pede um *forfeit* da roleta; a versão do app trata isso como desafio manual opcional, sem punições destrutivas.
+
+A classificação legada `PRINCIPAL`/`EXTRA` foi preservada para **objetivos não relacionados a fazendas**, mantendo o progresso já salvo. **Todas as fazendas contam igualmente para a meta de 50%**, independentemente de sua antiga classificação. Uma fazenda acima do mínimo conta como extra. A porcentagem de avanço considera os requisitos, não todos os itens da lista; o app permite consultar qualquer era mesmo quando bloqueada.
+
 
 ## Stack
 
