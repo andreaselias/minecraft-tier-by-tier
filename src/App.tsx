@@ -8,6 +8,7 @@ import {
   Trophy, Upload, Wheat, X,
 } from 'lucide-react';
 import { CATEGORIES, TIERS, WHEEL_CHALLENGES } from './content';
+import { isTierUnlocked, nextGoal, tierStats } from './progression';
 import { downloadBackup, loadWorld, NEW_WORLD, saveWorld, validateBackup } from './store';
 import type { AppState, Category, Dimension, MapLocation, Objective, Tier, View, WheelChallenge } from './types';
 
@@ -28,16 +29,6 @@ const KIND_LABELS: Record<MapLocation['kind'], string> = {
 };
 const KIND_ICONS: Record<MapLocation['kind'], string> = { base: '⌂', farm: '✿', portal: '◇', structure: '▣', other: '✧' };
 
-function tierStats(tier: Tier, completed: AppState['completed']) {
-  const core = tier.goals.filter((goal) => !goal.optional);
-  const done = core.filter((goal) => Boolean(completed[goal.id])).length;
-  const bonus = tier.goals.filter((goal) => goal.optional);
-  const bonusDone = bonus.filter((goal) => Boolean(completed[goal.id])).length;
-  return { done, total: core.length, percent: core.length ? Math.round(done * 100 / core.length) : 100, bonusDone, bonusTotal: bonus.length };
-}
-function isTierUnlocked(tierId: number, completed: AppState['completed']) {
-  return TIERS.filter((tier) => tier.id < tierId).every((tier) => tierStats(tier, completed).percent === 100);
-}
 function formatDate(time: number) { return new Date(time).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }); }
 function formatCoords(location: MapLocation) { return `${location.x}, ${location.y}, ${location.z}`; }
 function randomIndex(max: number): number {
@@ -133,7 +124,7 @@ function SettingsModal({ world, onChange, onReset, onImport, onClose, notify }: 
             <Compass size={20} /><span><strong>Livre</strong><small>Explore qualquer era. Você decide quando seguir as regras.</small></span><Check size={17} />
           </button>
           <button type="button" className={`setting-choice ${world.difficulty === 'strict' ? 'active' : ''}`} onClick={() => onChange({ difficulty: 'strict' })}>
-            <LockKeyhole size={20} /><span><strong>Rigoroso</strong><small>Conclua todos os objetivos principais da era anterior para marcar os próximos.</small></span><Check size={17} />
+            <LockKeyhole size={20} /><span><strong>Rigoroso</strong><small>Conclua as missões obrigatórias e metade das fazendas de cada era anterior.</small></span><Check size={17} />
           </button>
         </div>
         <div className="field-title">SEUS DADOS</div>
@@ -164,13 +155,15 @@ export default function App() {
   const [toast, setToast] = useState('');
 
   const tier = TIERS.find((item) => item.id === world.activeTier) ?? TIERS[0];
-  const allCore = TIERS.flatMap((item) => item.goals.filter((goal) => !goal.optional));
-  const allDone = allCore.filter((goal) => Boolean(world.completed[goal.id])).length;
-  const overallPercent = Math.round(allDone * 100 / allCore.length);
-  const suggestedTier = TIERS.find((item) => tierStats(item, world.completed).percent < 100) ?? TIERS[TIERS.length - 1];
-  const suggestedGoal = suggestedTier.goals.find((goal) => !goal.optional && !world.completed[goal.id]);
-  const completedTiers = TIERS.filter((item) => tierStats(item, world.completed).percent === 100).length;
+  const tierProgress = TIERS.map((item) => tierStats(item, world.completed));
+  const allDone = tierProgress.reduce((sum, stats) => sum + stats.done, 0);
+  const allTotal = tierProgress.reduce((sum, stats) => sum + stats.total, 0);
+  const overallPercent = allTotal ? Math.round(allDone * 100 / allTotal) : 100;
+  const suggestedTier = TIERS.find((item) => !tierStats(item, world.completed).ready) ?? TIERS[TIERS.length - 1];
+  const suggestedGoal = nextGoal(suggestedTier, world.completed);
+  const completedTiers = tierProgress.filter((stats) => stats.ready).length;
   const strictLocked = world.difficulty === 'strict' && !isTierUnlocked(tier.id, world.completed);
+  const currentProgress = tierStats(tier, world.completed);
   const filteredGoals = tier.goals.filter((goal) => {
     if (selectedCategory !== 'all' && goal.category !== selectedCategory) return false;
     if (showIncomplete && world.completed[goal.id]) return false;
@@ -179,7 +172,7 @@ export default function App() {
   });
   const locations = useMemo(() => world.locations.filter((item) => item.dimension === mapDimension), [world.locations, mapDimension]);
   const activeLocation = locations.find((item) => item.id === selectedLocation);
-  const totalBonus = TIERS.flatMap((item) => item.goals).filter((goal) => goal.optional && world.completed[goal.id]).length;
+  const totalBonus = tierProgress.reduce((sum, stats) => sum + stats.bonusDone, 0);
 
   useEffect(() => {
     if (!saveWorld(world)) setToast('Não foi possível salvar. Verifique o armazenamento do navegador.');
@@ -203,7 +196,7 @@ export default function App() {
   };
   const toggleGoal = (goal: Objective, goalTier: Tier) => {
     if (world.difficulty === 'strict' && !isTierUnlocked(goalTier.id, world.completed)) {
-      setToast('Conclua os objetivos principais da era anterior para liberar esta etapa.'); return;
+      setToast('Conclua as missões obrigatórias e pelo menos metade das fazendas da era anterior.'); return;
     }
     setWorld((previous) => {
       const completed = { ...previous.completed };
@@ -244,7 +237,7 @@ export default function App() {
         <div className="sidebar-world-name"><Mountain size={17} /> {world.worldName || 'Sem nome'}</div>
         <div className="sidebar-world-stats"><span>Jornada concluída</span><strong>{overallPercent}%</strong></div>
         <ProgressBar value={overallPercent} />
-        <div className="sidebar-world-foot">{allDone} de {allCore.length} objetivos principais</div>
+        <div className="sidebar-world-foot">{allDone} de {allTotal} requisitos de avanço</div>
       </div>
       <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}><Settings2 size={18} /> Configurações <ChevronRight size={16} /></button>
       <div className="sidebar-footer">Feito para Minecraft Bedrock <span>◆</span> v1.0</div>
@@ -256,21 +249,21 @@ export default function App() {
         {view === 'overview' && <>
           <section className="hero-panel"><div className="hero-copy"><div className="hero-kicker"><span className="spark-symbol">✦</span> SUA AVENTURA, SUA HISTÓRIA</div><h1>Um mundo.<br /><em>Infinitas conquistas.</em></h1><p>Transforme cada sessão no Minecraft em um novo capítulo. Evolua por eras, construa algo memorável e nunca fique sem ter o que fazer.</p><div className="hero-cta"><button className="button primary" onClick={() => chooseTier(suggestedTier.id)}><Target size={18} /> Continuar jornada <ArrowRight size={17} /></button><button className="button ghost" onClick={() => goTo('rules')}>Como funciona <ChevronRight size={17} /></button></div></div><PixelScene /><div className="hero-corner">SURVIVAL MODE · BEDROCK</div></section>
           <section className="stats-grid" aria-label="Resumo da jornada">
-            <div className="stat-card"><div className="stat-icon orange"><Target size={21} /></div><div><span>PROGRESSO GERAL</span><strong>{overallPercent}<small>%</small></strong><div className="stat-foot">{allDone} / {allCore.length} objetivos</div></div><ProgressBar value={overallPercent} /></div>
+            <div className="stat-card"><div className="stat-icon orange"><Target size={21} /></div><div><span>PROGRESSO GERAL</span><strong>{overallPercent}<small>%</small></strong><div className="stat-foot">{allDone} / {allTotal} requisitos</div></div><ProgressBar value={overallPercent} /></div>
             <div className="stat-card"><div className="stat-icon green"><Layers3 size={21} /></div><div><span>ERAS CONCLUÍDAS</span><strong>{completedTiers}<small> / 5</small></strong><div className="stat-foot">Sua história em capítulos</div></div></div>
             <div className="stat-card"><div className="stat-icon purple"><Trophy size={21} /></div><div><span>EXTRAS COMPLETOS</span><strong>{totalBonus}</strong><div className="stat-foot">Desafios opcionais</div></div></div>
             <div className="stat-card"><div className="stat-icon blue"><MapPin size={21} /></div><div><span>LOCAIS DESCOBERTOS</span><strong>{world.locations.length}</strong><div className="stat-foot">Salvos no seu Atlas</div></div></div>
           </section>
           <section className="next-quest"><div className="quest-icon"><Flag size={22} /></div><div className="next-quest-text"><span className="eyebrow">SUA PRÓXIMA MISSÃO · ERA {suggestedTier.id}</span><h2>{suggestedGoal ? suggestedGoal.title : 'Você completou a jornada principal!'}</h2><p>{suggestedGoal ? suggestedGoal.description : 'Que tal revisitar os extras, expandir sua cidade ou criar seus próprios desafios?'}</p></div><button className="button secondary" onClick={() => chooseTier(suggestedTier.id)}>Ver objetivo <ArrowRight size={17} /></button></section>
-          <div className="section-heading"><div><span className="eyebrow">CINCO CAPÍTULOS</span><h2>Seu caminho até o legado</h2><p>Cada era apresenta novas possibilidades, construções e desafios.</p></div><span className="heading-note"><ShieldCheck size={16} /> Objetivos principais + extras opcionais</span></div>
+          <div className="section-heading"><div><span className="eyebrow">CINCO CAPÍTULOS</span><h2>Seu caminho até o legado</h2><p>Cada era apresenta novas possibilidades, construções e desafios.</p></div><span className="heading-note"><ShieldCheck size={16} /> Missões obrigatórias + metade das fazendas</span></div>
           <section className="era-grid">
             {TIERS.map((item) => {
               const stats = tierStats(item, world.completed);
               const unlocked = isTierUnlocked(item.id, world.completed);
-              return <button key={item.id} className={`era-card theme-${item.theme} ${stats.percent === 100 ? 'finished' : ''}`} onClick={() => chooseTier(item.id)}>
-                <div className="era-card-top"><EraNumber tier={item} /><span className={`era-status ${stats.percent === 100 ? 'is-done' : ''}`}>{stats.percent === 100 ? <><CheckCircle2 size={13} /> Concluída</> : !unlocked ? <><LockKeyhole size={13} /> Futura</> : 'Em progresso'}</span></div>
+              return <button key={item.id} className={`era-card theme-${item.theme} ${stats.ready ? 'finished' : ''}`} onClick={() => chooseTier(item.id)}>
+                <div className="era-card-top"><EraNumber tier={item} /><span className={`era-status ${stats.ready ? 'is-done' : ''}`}>{stats.ready ? <><CheckCircle2 size={13} /> Concluída</> : !unlocked ? <><LockKeyhole size={13} /> Futura</> : 'Em progresso'}</span></div>
                 <div className="era-card-art"><span className="art-symbol">{['⛏','⚙','✧','⚔','♛'][item.id - 1]}</span><span className="art-grid" /></div>
-                <div className="era-card-content"><span className="era-kicker">ERA {String(item.id).padStart(2, '0')}</span><h3>{item.name}</h3><p>{item.subtitle}</p><div className="era-progress-text"><span>{stats.done} de {stats.total} missões</span><strong>{stats.percent}%</strong></div><ProgressBar value={stats.percent} /><div className="era-card-footer"><span>{stats.bonusTotal} extras opcionais</span><ArrowRight size={18} /></div></div>
+                <div className="era-card-content"><span className="era-kicker">ERA {String(item.id).padStart(2, '0')}</span><h3>{item.name}</h3><p>{item.subtitle}</p><div className="era-progress-text"><span>{stats.done} de {stats.total} requisitos</span><strong>{stats.percent}%</strong></div><ProgressBar value={stats.percent} /><div className="era-card-footer"><span>{stats.farmDone}/{stats.farmMinimum} fazendas · {stats.bonusTotal} extras</span><ArrowRight size={18} /></div></div>
               </button>;
             })}
           </section>
@@ -278,24 +271,24 @@ export default function App() {
         </>}
 
         {view === 'journey' && <>
-          <div className="page-title"><div><span className="eyebrow">SUA TRILHA DE PROGRESSÃO</span><h1>Jornada por eras</h1><p>Conclua objetivos principais para evoluir. Os extras são convites à exploração, não obstáculos.</p></div><button className="button secondary" onClick={() => goTo('overview')}><ArrowLeft size={17} /> Visão geral</button></div>
-          <div className="tier-switcher" aria-label="Selecionar era">{TIERS.map((item) => <button key={item.id} className={`tier-tab theme-${item.theme} ${tier.id === item.id ? 'selected' : ''}`} onClick={() => chooseTier(item.id)}><EraNumber tier={item} /><span><small>ERA {item.id}</small><strong>{item.name.replace('Era da ', '').replace('Era do ', '')}</strong></span>{tierStats(item, world.completed).percent === 100 ? <CheckCircle2 size={17} /> : isTierUnlocked(item.id, world.completed) ? <ChevronRight size={16} /> : <LockKeyhole size={14} />}</button>)}</div>
-          <section className={`journey-hero theme-${tier.theme}`}><div className="journey-hero-left"><div className="era-chip">CAPÍTULO {String(tier.id).padStart(2, '0')} <span>•</span> {tier.subtitle}</div><h2>{tier.name}</h2><p>{tier.description}</p><div className="journey-motto">“{tier.tagline}”</div></div><div className="journey-hero-progress"><span>PROGRESSO DA ERA</span><strong>{tierStats(tier, world.completed).percent}<small>%</small></strong><ProgressBar value={tierStats(tier, world.completed).percent} /><small>{tierStats(tier, world.completed).done} de {tierStats(tier, world.completed).total} objetivos principais</small></div></section>
-          {strictLocked && <div className="notice-bar"><LockKeyhole size={18} /><span>Esta era ainda está bloqueada no modo rigoroso. Você pode consultar os objetivos, mas só poderá marcá-los depois de concluir as eras anteriores.</span><button onClick={() => setSettingsOpen(true)}>Alterar modo <ChevronRight size={15} /></button></div>}
+          <div className="page-title"><div><span className="eyebrow">SUA TRILHA DE PROGRESSÃO</span><h1>Jornada por eras</h1><p>Conclua as missões obrigatórias e escolha pelo menos metade das fazendas para avançar.</p></div><button className="button secondary" onClick={() => goTo('overview')}><ArrowLeft size={17} /> Visão geral</button></div>
+          <div className="tier-switcher" aria-label="Selecionar era">{TIERS.map((item) => <button key={item.id} className={`tier-tab theme-${item.theme} ${tier.id === item.id ? 'selected' : ''}`} onClick={() => chooseTier(item.id)}><EraNumber tier={item} /><span><small>ERA {item.id}</small><strong>{item.name.replace('Era da ', '').replace('Era do ', '')}</strong></span>{tierStats(item, world.completed).ready ? <CheckCircle2 size={17} /> : isTierUnlocked(item.id, world.completed) ? <ChevronRight size={16} /> : <LockKeyhole size={14} />}</button>)}</div>
+          <section className={`journey-hero theme-${tier.theme}`}><div className="journey-hero-left"><div className="era-chip">CAPÍTULO {String(tier.id).padStart(2, '0')} <span>•</span> {tier.subtitle}</div><h2>{tier.name}</h2><p>{tier.description}</p><div className="journey-motto">“{tier.tagline}”</div></div><div className="journey-hero-progress"><span>REQUISITOS DE AVANÇO</span><strong>{currentProgress.percent}<small>%</small></strong><ProgressBar value={currentProgress.percent} /><small>{currentProgress.done} de {currentProgress.total} requisitos · {currentProgress.farmDone}/{currentProgress.farmMinimum} fazendas</small></div></section>
+          {strictLocked && <div className="notice-bar"><LockKeyhole size={18} /><span>Era bloqueada no modo rigoroso. Conclua os objetivos obrigatórios e 50% das fazendas de cada era anterior para marcar tarefas aqui.</span><button onClick={() => setSettingsOpen(true)}>Alterar modo <ChevronRight size={15} /></button></div>}
           <div className="journey-layout"><div className="journey-left"><div className="objectives-toolbar"><div className="objective-tabs"><button className={selectedCategory === 'all' ? 'selected' : ''} onClick={() => setSelectedCategory('all')}>Todas <span>{tier.goals.length}</span></button>{CATEGORIES.map((category) => { const count = tier.goals.filter((goal) => goal.category === category.id).length; return count ? <button key={category.id} className={selectedCategory === category.id ? 'selected' : ''} onClick={() => setSelectedCategory(category.id)}>{category.label} <span>{count}</span></button> : null; })}</div><div className="toolbar-bottom"><label className="search-input"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar objetivos..." aria-label="Buscar objetivos" /></label><button className={`filter-button ${showIncomplete ? 'selected' : ''}`} onClick={() => setShowIncomplete((value) => !value)}>{showIncomplete ? <Check size={16} /> : <MoreHorizontal size={16} />} Apenas pendentes</button></div></div>
             <div className="objective-list">{filteredGoals.length ? filteredGoals.map((goal) => {
               const checked = Boolean(world.completed[goal.id]); const expanded = expandedGoal === goal.id;
               return <article key={goal.id} className={`objective-item ${checked ? 'is-checked' : ''} ${expanded ? 'is-expanded' : ''}`}>
                 <button className="objective-checkbox" aria-label={`${checked ? 'Desmarcar' : 'Concluir'} ${goal.title}`} aria-pressed={checked} disabled={strictLocked} onClick={() => toggleGoal(goal, tier)}>{checked && <Check size={18} strokeWidth={3} />}</button>
-                <button className="objective-main" aria-expanded={expanded} onClick={() => setExpandedGoal(expanded ? null : goal.id)}><span className={`objective-icon cat-${goal.category}`}><CategoryIcon category={goal.category} size={19} /></span><span className="objective-text"><strong>{goal.title}</strong><span>{goal.description}</span></span><span className={`objective-type ${goal.optional ? 'optional' : ''}`}>{goal.optional ? 'EXTRA' : 'PRINCIPAL'}</span><ChevronDown className={`objective-chevron ${expanded ? 'rotated' : ''}`} size={18} /></button>
-                {expanded && <div className="objective-detail"><div><Info size={16} /><span><strong>Dica:</strong> {goal.tip}</span></div>{checked && <div className="objective-completed"><CheckCircle2 size={15} /> Concluído em {formatDate(world.completed[goal.id])}</div>}<button className="button secondary mini" disabled={strictLocked} onClick={() => toggleGoal(goal, tier)}>{checked ? 'Desmarcar objetivo' : 'Marcar como concluído'}</button></div>}
+                <button className="objective-main" aria-expanded={expanded} onClick={() => setExpandedGoal(expanded ? null : goal.id)}><span className={`objective-icon cat-${goal.category}`}><CategoryIcon category={goal.category} size={19} /></span><span className="objective-text"><strong>{goal.title}</strong><span>{goal.description}</span></span><span className={`objective-type ${goal.optional || goal.category === 'farm' ? 'optional' : ''}`}>{goal.category === 'farm' ? 'META 50%' : goal.optional ? 'EXTRA' : 'OBRIGATÓRIO'}</span><ChevronDown className={`objective-chevron ${expanded ? 'rotated' : ''}`} size={18} /></button>
+                {expanded && <div className="objective-detail"><div><Info size={16} /><span><strong>Dica:</strong> {goal.tip}</span></div>{(goal.category === 'build' || goal.category === 'farm') && <div><ShieldCheck size={16} /><span><strong>Critério de conclusão:</strong> deve funcionar, ter acabamento caprichado e estar integrada ao mundo.</span></div>}{goal.category === 'farm' && <div><Wheat size={16} /><span>Qualquer fazenda concluída contribui para a meta de {currentProgress.farmMinimum} nesta era.</span></div>}{checked && <div className="objective-completed"><CheckCircle2 size={15} /> Concluído em {formatDate(world.completed[goal.id])}</div>}<button className="button secondary mini" disabled={strictLocked} onClick={() => toggleGoal(goal, tier)}>{checked ? 'Desmarcar objetivo' : 'Marcar como concluído'}</button></div>}
               </article>;
             }) : <div className="empty-results"><Search size={32} /><strong>Nenhum objetivo encontrado</strong><p>Tente limpar a busca ou trocar o filtro.</p><button className="button secondary" onClick={() => { setSearch(''); setShowIncomplete(false); setSelectedCategory('all'); }}>Limpar filtros</button></div>}</div>
-          </div><aside className="journey-right"><div className="side-panel"><div className="side-panel-title"><Box size={19} /><h3>Desbloqueios da era</h3></div><p className="muted">O que você pode usar ao chegar aqui.</p><div className="equipment-note"><Shield size={17} /> {tier.equipment}</div><ul className="unlock-list">{tier.unlocks.map((unlock) => <li key={unlock}><Check size={15} /> {unlock}</li>)}</ul></div><div className="side-panel"><div className="side-panel-title"><Trophy size={19} /><h3>Por categoria</h3></div>{CATEGORIES.map((category) => {
+          </div><aside className="journey-right"><div className={`side-panel advancement-checklist ${currentProgress.ready ? 'advance-ready' : ''}`}><div className="side-panel-title"><ShieldCheck size={19} /><h3>Condições para avançar</h3></div><div className="advancement-metric"><span>Missões obrigatórias</span><strong>{currentProgress.mandatoryDone}/{currentProgress.mandatoryTotal}</strong></div><ProgressBar value={currentProgress.mandatoryTotal ? Math.round(100 * currentProgress.mandatoryDone / currentProgress.mandatoryTotal) : 100} /><div className="advancement-metric"><span>Fazendas à sua escolha (50%)</span><strong>{currentProgress.farmDone}/{currentProgress.farmMinimum}</strong></div><ProgressBar value={currentProgress.farmMinimum ? Math.min(100, Math.round(100 * currentProgress.farmDone / currentProgress.farmMinimum)) : 100} /><div className="advancement-status">{currentProgress.ready ? <><CheckCircle2 size={16} /> Requisitos de avanço concluídos</> : <><LockKeyhole size={16} /> Ainda faltam requisitos</>}</div></div><div className="side-panel"><div className="side-panel-title"><Box size={19} /><h3>Desbloqueios da era</h3></div><p className="muted">O que você pode usar ao chegar aqui.</p><div className="equipment-note"><Shield size={17} /> {tier.equipment}</div><ul className="unlock-list">{tier.unlocks.map((unlock) => <li key={unlock}><Check size={15} /> {unlock}</li>)}</ul></div><div className="side-panel"><div className="side-panel-title"><Trophy size={19} /><h3>Por categoria</h3></div>{CATEGORIES.map((category) => {
             const goals = tier.goals.filter((goal) => goal.category === category.id); if (!goals.length) return null;
             const done = goals.filter((goal) => world.completed[goal.id]).length;
             return <div className="category-stat" key={category.id}><div className="category-stat-top"><span><CategoryIcon category={category.id} size={16} /> {category.label}</span><strong>{done}/{goals.length}</strong></div><ProgressBar value={Math.round(done * 100 / goals.length)} /></div>;
-          })}</div><div className="side-tip"><Sparkles size={19} /><div><strong>Dica de sobrevivência</strong><p>No modo Rigoroso, o próximo capítulo só libera após 100% das tarefas principais. Extras nunca bloqueiam sua evolução.</p></div></div></aside></div>
+          })}</div><div className="side-tip"><Sparkles size={19} /><div><strong>Dica de sobrevivência</strong><p>No modo Rigoroso, conclua todas as missões obrigatórias e 50% de todas as fazendas desta era. Você escolhe quais fazendas fazer.</p></div></div></aside></div>
           <div className="journey-bottom-nav"><button className="button secondary" disabled={tier.id === 1} onClick={() => chooseTier(tier.id - 1)}><ArrowLeft size={16} /> Era anterior</button><button className="button primary" disabled={tier.id === 5} onClick={() => chooseTier(tier.id + 1)}>Próxima era <ArrowRight size={16} /></button></div>
         </>}
 
@@ -324,7 +317,7 @@ export default function App() {
 
         {view === 'atlas' && <>
           <div className="page-title"><div><span className="eyebrow">CADA LUGAR CONTA UMA HISTÓRIA</span><h1>Atlas do mundo</h1><p>Registre construções, portais, fazendas e destinos para nunca perder uma descoberta.</p></div><button className="button primary" onClick={() => setLocationOpen(true)}><Plus size={18} /> Novo local</button></div>
-          <div className="atlas-summary"><div><MapPin size={19} /><strong>{world.locations.length}</strong><span>locais registrados</span></div><div><Mountain size={19} /><strong>{world.locations.filter((location) => location.dimension === 'overworld').length}</strong><span>no Overworld</span></div><div><Compass size={19} /><strong>{world.seed || '—'}</strong><span>seed do mundo</span></div></div>
+          <div className="seed-rule-note"><Map size={17} /><span><strong>Mapa da seed:</strong> consulta livre entre eras. Durante uma era, a regra original pede um desafio da roleta.</span><button onClick={() => goTo('wheel')}>Abrir roleta <ArrowRight size={14} /></button></div><div className="atlas-summary"><div><MapPin size={19} /><strong>{world.locations.length}</strong><span>locais registrados</span></div><div><Mountain size={19} /><strong>{world.locations.filter((location) => location.dimension === 'overworld').length}</strong><span>no Overworld</span></div><div><Compass size={19} /><strong>{world.seed || '—'}</strong><span>seed do mundo</span></div></div>
           <section className="atlas-layout"><div className="atlas-left"><div className="atlas-map-header"><div><span className="eyebrow">MAPA ESQUEMÁTICO</span><h2>Seus pontos de referência</h2></div><div className="dimension-tabs">{(Object.keys(DIMENSIONS) as Dimension[]).map((dimension) => <button key={dimension} className={mapDimension === dimension ? 'selected' : ''} onClick={() => { setMapDimension(dimension); setSelectedLocation(null); }}>{DIMENSIONS[dimension]}</button>)}</div></div>
             <div className="atlas-map" aria-label={`Representação esquemática dos locais no ${DIMENSIONS[mapDimension]}`}>
               {locations.length ? (() => {
@@ -351,11 +344,18 @@ export default function App() {
         {view === 'rules' && <>
           <div className="page-title"><div><span className="eyebrow">O MANUAL DA AVENTURA</span><h1>Como funciona</h1><p>Um conjunto flexível de regras para dar direção ao Survival, sem transformar diversão em obrigação.</p></div><span className="page-decoration"><BookOpen size={32} /></span></div>
           <section className="rules-intro"><div className="rules-intro-art"><Pickaxe size={51} strokeWidth={1.6} /><span>01 → 05</span></div><div><span className="eyebrow">O CONCEITO</span><h2>Progressão com propósito</h2><p>O Minecraft permite fazer quase tudo desde o começo. O Tier by Tier divide sua aventura em cinco eras, criando novos objetivos e liberando equipamentos e dimensões de forma gradual. As tarefas principais fazem a história avançar; as extras aprofundam cada capítulo.</p></div></section>
-          <div className="rule-grid"><div className="rule-card"><div className="rule-number">01</div><Target size={27} /><h3>Complete os objetivos</h3><p>Marque uma missão quando ela estiver realmente pronta no seu mundo. A porcentagem da era considera apenas os objetivos principais.</p></div><div className="rule-card"><div className="rule-number">02</div><LockKeyhole size={27} /><h3>Respeite os desbloqueios</h3><p>Cada era recomenda um nível máximo de equipamento. No modo Rigoroso, só é possível marcar tarefas de eras liberadas.</p></div><div className="rule-card"><div className="rule-number">03</div><Trophy size={27} /><h3>Faça extras por diversão</h3><p>Coleções, fazendas especiais e grandes construções são opcionais. Você não precisa completar tudo para continuar jogando.</p></div><div className="rule-card"><div className="rule-number">04</div><Dices size={27} /><h3>Use a roleta se quiser</h3><p>Após uma morte ou quando o jogo ficar repetitivo, sorteie uma missão. A roleta não interfere no progresso principal.</p></div></div>
-          <div className="section-heading compact"><div><span className="eyebrow">DESBLOQUEIOS</span><h2>O que muda em cada era</h2></div></div>
+          <div className="rule-grid">
+            <div className="rule-card"><div className="rule-number">01</div><Target size={27} /><h3>Conclua a era</h3><p>Complete todas as missões obrigatórias antes de avançar. Projetos extras não bloqueiam a jornada.</p></div>
+            <div className="rule-card"><div className="rule-number">02</div><Castle size={27} /><h3>Construa com propósito</h3><p>Toda construção e fazenda concluída deve funcionar, ter acabamento caprichado e integrar-se ao mundo.</p></div>
+            <div className="rule-card"><div className="rule-number">03</div><Wheat size={27} /><h3>Meta de 50% das fazendas</h3><p>Escolha livremente quais fazendas construir. Metade do catálogo da era é necessária; o restante é opcional.</p></div>
+            <div className="rule-card"><div className="rule-number">04</div><LockKeyhole size={27} /><h3>Pode coletar, não usar</h3><p>Todo loot pode ser guardado, mas use equipamentos restritos apenas quando a era correspondente for desbloqueada.</p></div>
+            <div className="rule-card"><div className="rule-number">05</div><Trophy size={27} /><h3>Guarde as lembranças</h3><p>Preserve itens de valor histórico, conquistas e troféus para criar seu museu nas eras futuras.</p></div>
+            <div className="rule-card"><div className="rule-number">06</div><Mountain size={27} /><h3>Biomas grandes (opcional)</h3><p>O vídeo recomenda mundos Large Biomes para imersão e coerência visual. É uma sugestão, não uma exigência; verifique a disponibilidade na sua versão Bedrock.</p></div>
+            <div className="rule-card"><div className="rule-number">07</div><Map size={27} /><h3>Mapa da seed e roleta</h3><p>Entre eras, a consulta ao mapa da seed é livre. Durante uma era, as regras do vídeo exigem pagar um desafio da roleta. Aqui, a escolha é manual e os desafios não são destrutivos.</p><button className="button secondary mini" onClick={() => goTo('wheel')}>Abrir roleta <ArrowRight size={15} /></button></div>
+          </div>
           <div className="rules-timeline">{TIERS.map((item) => <button className={`rule-era theme-${item.theme}`} key={item.id} onClick={() => chooseTier(item.id)}><EraNumber tier={item} /><div><span>ERA {item.id}</span><h3>{item.name}</h3><p>{item.equipment}</p></div><ChevronRight size={20} /></button>)}</div>
-          <section className="rules-faq"><div className="section-heading compact"><div><span className="eyebrow">PERGUNTAS FREQUENTES</span><h2>Antes de começar</h2></div></div><details open><summary>Posso jogar em qualquer mundo?</summary><p>Sim. O app foi planejado para Minecraft Bedrock no modo Survival, mas não se conecta ao jogo nem altera seu mundo. Você marca objetivos manualmente.</p></details><details><summary>Preciso zerar todas as fazendas para avançar?</summary><p>Não. As missões com selo Principal contam para a progressão. Os Extras são grandes projetos e coleções que você pode concluir mais tarde.</p></details><details><summary>O que acontece quando eu morrer?</summary><p>Nada é aplicado automaticamente. Se quiser adicionar um desafio à morte, abra a Roleta e gire. Não há penalidades destrutivas nem perda obrigatória de itens.</p></details><details><summary>O aplicativo sincroniza no celular?</summary><p>Ele funciona em telas pequenas e pode ser instalado como PWA, inclusive offline depois de carregado. Nesta versão, os dados ficam salvos localmente em cada navegador. Use Configurações → Exportar/Importar backup para transferir o progresso.</p></details><details><summary>O guia é para Bedrock ou Java?</summary><p>Prioriza Bedrock, incluindo ferramentas de cobre, Trial Chambers e mecânicas específicas de farms. Projetos automáticos podem variar conforme a versão instalada; confirme o tutorial antes de construir.</p></details></section>
-          <div className="rules-credit"><ShieldCheck size={20} /><div><strong>Regras feitas para se adaptar ao seu estilo</strong><p>Inspirado no conceito comunitário Tier by Tier, com objetivos e interpretação próprios para um planejamento de longo prazo.</p></div></div>
+          <section className="rules-faq"><div className="section-heading compact"><div><span className="eyebrow">PERGUNTAS FREQUENTES</span><h2>Antes de começar</h2></div></div><details open><summary>Posso jogar em qualquer mundo?</summary><p>Sim. O app foi planejado para Minecraft Bedrock no modo Survival, mas não se conecta ao jogo nem altera seu mundo. Você marca objetivos manualmente.</p></details><details><summary>Preciso zerar todas as fazendas para avançar?</summary><p>Não. É necessário construir pelo menos 50% das fazendas disponíveis na era. Você escolhe quais fazer, mesmo que algumas fossem marcadas como extras. O restante é opcional.</p></details><details><summary>O que acontece quando eu morrer?</summary><p>Nada é aplicado automaticamente. Se quiser adicionar um desafio à morte, abra a Roleta e gire. Não há penalidades destrutivas nem perda obrigatória de itens.</p></details><details><summary>O aplicativo sincroniza no celular?</summary><p>Ele funciona em telas pequenas e pode ser instalado como PWA, inclusive offline depois de carregado. Nesta versão, os dados ficam salvos localmente em cada navegador. Use Configurações → Exportar/Importar backup para transferir o progresso.</p></details><details><summary>O guia é para Bedrock ou Java?</summary><p>Prioriza Bedrock, incluindo ferramentas de cobre, Trial Chambers e mecânicas específicas de farms. Projetos automáticos podem variar conforme a versão instalada; confirme o tutorial antes de construir.</p></details></section>
+          <div className="rules-credit"><ShieldCheck size={20} /><div><strong>As sete regras da série, adaptadas ao Bedrock</strong><p>Inspirado no conjunto de regras Tier by Tier mostrado no vídeo. A interface, o conteúdo das missões e os desafios não destrutivos são adaptações para jogar Bedrock no longo prazo.</p></div></div>
         </>}
       </main>
       <footer className="site-footer"><span>✦ TIER BY TIER</span><span>Seu mundo. Suas regras. Sua história.</span><span>Projeto independente · não afiliado à Mojang ou Microsoft</span></footer>
