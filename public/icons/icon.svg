@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Tier by Tier">
+<rect width="512" height="512" rx="108" fill="#13241c"/>
+<rect x="28" y="28" width="456" height="456" rx="88" fill="#203b28" stroke="#b2c47c" stroke-width="13"/>
+<path d="M98 360H414" stroke="#1a2d20" stroke-width="20"/>
+<g transform="translate(256 250) rotate(-39) translate(-256 -250)">
+<path fill="#e3ae66" d="M230 177h52v236h-52z"/>
+<path fill="#8f5f3a" d="M230 344h52v69h-52z"/>
+<path fill="#f9da98" d="M230 177h15v220h-15z"/>
+<path fill="#d6d9ba" d="M90 116h332v51H90z"/>
+<path fill="#869b88" d="M90 167h62v43H90zM359 167h63v43h-63z"/>
+<path fill="#f3ecd7" d="M122 89h268v27H122z"/>
+</g>
+<path fill="#a3bf78" d="M85 398h80v16H85zM346 398h81v16h-81z"/>
+</svg>
