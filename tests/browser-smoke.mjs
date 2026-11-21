@@ -48,7 +48,17 @@ try {
     await page.goto(address, { waitUntil: 'networkidle' });
     await page.locator('.hero-panel h1').waitFor({ state: 'visible', timeout: 10000 });
     const text = await page.locator('#root').innerText();
-    assert.match(text, /Infinitas conquistas/, label + ': missing app content');
+    assert.match(text, /Uma vila nasce/, label + ': missing Bellacera content');
+    await page.locator('nav:visible').getByRole('button', {name:'Materiais', exact:true}).click();
+    await page.locator('.concrete-panel h2').waitFor({state:'visible'});
+    await page.locator('.concrete-panel input[type="number"]').fill('1000');
+    assert.match(await page.locator('.recipe').innerText(), /500/, label + ': concrete math missing');
+    await page.locator('nav:visible').getByRole('button', {name:'Jornada', exact:true}).click();
+    await page.locator('.goal-check').first().click();
+    await page.waitForFunction(() => {
+      const raw=localStorage.getItem('bellacera:world:v2');
+      return Boolean(raw && Object.keys(JSON.parse(raw).completed).length>0);
+    });
     assert.equal(errors.length, 0, label + ': ' + errors.join('\n'));
     console.log(`PASS ${label}: rendered main view under ${prefix}`);
     await page.close();

@@ -22,6 +22,7 @@ try {
       console.log(label, 'responses:', responses.slice(0, 20));
       if (errors.length) console.log(label, 'errors:', errors);
       await page.locator('.hero-panel h1').waitFor({ state: 'visible', timeout: 10000 });
+      if (!(await page.locator('#root').innerText()).includes('Uma vila nasce')) throw new Error('Bellacera não carregou');
       if (errors.length) throw new Error(errors.join('\n'));
       console.log('PASS LIVE', label);
     } catch (e) {

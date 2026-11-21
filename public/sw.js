@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tier-by-tier-shell-v1';
+const CACHE_NAME = 'bellacera-shell-v2';
 const BASE = new URL('./', self.registration.scope);
 const SHELL = [BASE.href, new URL('index.html', BASE).href, new URL('manifest.webmanifest', BASE).href, new URL('icons/icon-192.png', BASE).href, new URL('icons/icon-512.png', BASE).href];
 
