@@ -1,18 +1,16 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
-import './styles.css';
+import BellaceraApp from './bellacera/App.tsx';
+import './bellacera/styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+  <React.StrictMode><BellaceraApp /></React.StrictMode>
 );
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {
-      // O app segue funcional caso o navegador não permita uso offline.
+    navigator.serviceWorker.register(import.meta.env.BASE_URL+'sw.js').catch(() => {
+      // A interface continua funcional quando o offline não está disponível.
     });
   });
 }
